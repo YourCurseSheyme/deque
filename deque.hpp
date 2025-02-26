@@ -46,11 +46,43 @@ class Deque {
     }
   }
 
-  Deque(size_t count, const T& value) {
+  Deque(size_t count, const T& value) : Deque(count) {
     if (count == 0) {
       return;
     }
-    init((count - 1) / kBucketSize + 1, value);
+    size_t new_cap = ((count - 1) / kBucketSize) + 1;
+    auto cleanup = [this, new_cap]() {
+      for (size_t idx = 0; idx < new_cap; ++idx) {
+        if (data_[idx]) {
+          for (size_t kdx = 0; kdx < kBucketSize; ++kdx) {
+            data_[idx][kdx].~T();
+          }
+          operator delete[](data_[idx]);
+        }
+      }
+      delete[] data_;
+    };
+    try {
+      for (size_t idx = 0; idx < (new_cap - buckets_) / 2; ++idx) {
+        for (size_t kdx = 0; kdx < kBucketSize; ++kdx) {
+          new (&data_[idx][kdx]) T(value);
+        }
+      }
+    } catch (...) {
+      cleanup();
+      throw;
+    }
+    try {
+      for (size_t idx = (new_cap - buckets_) / 2 + buckets_; idx < new_cap;
+           ++idx) {
+        for (size_t kdx = 0; kdx < kBucketSize; ++kdx) {
+          new (&data_[idx][kdx]) T(value);
+        }
+      }
+    } catch (...) {
+      cleanup();
+      throw;
+    }
     buckets_ = (count - 1) / kBucketSize + 1;
     back_ = (count - 1) % kBucketSize;
     last_ = buckets_ - 1;
@@ -94,27 +126,15 @@ class Deque {
       return *this;
     }
     clear();
-    scale(other.buckets_);
-    size_t jdx = other.front_;
-    try {
-      for (size_t idx = other.first_; idx < other.last_ + 1; ++idx) {
-        while (jdx != kBucketSize) {
-          data_[idx][jdx] = other.data_[idx][jdx];
-          ++jdx;
-        }
-        jdx = 0;
-      }
-    } catch (...) {
-      clear();
-      delete[] data_;
-      throw;
-    }
-    buckets_ = other.buckets_;
-    size_ = other.size_;
-    first_ = other.first_;
-    last_ = other.last_;
-    front_ = other.front_;
-    back_ = other.back_;
+    delete[] data_;
+    Deque<T>* copy = new Deque<T>(other);
+    data_ = copy->data_;
+    buckets_ = copy->buckets_;
+    size_ = copy->size_;
+    first_ = copy->first_;
+    last_ = copy->last_;
+    front_ = copy->front_;
+    back_ = copy->back_;
     return *this;
   }
 
@@ -204,23 +224,21 @@ class Deque {
       set_first(value);
       return;
     }
-    ++size_;
     ++back_;
     if (back_ == kBucketSize) {
       back_ = 0;
       ++last_;
     }
     if (last_ == buckets_) {
-      size_t new_cap = buckets_ * 2 + 1;
-      scale(new_cap);
-      first_ += (new_cap - buckets_) / 2;
-      last_ += (new_cap - buckets_) / 2;
-      buckets_ = new_cap;
+      size_t new_buckets_count = buckets_ * 2 + 1;
+      scale(new_buckets_count);
+      first_ += (new_buckets_count - buckets_) / 2;
+      last_ += (new_buckets_count - buckets_) / 2;
+      buckets_ = new_buckets_count;
     }
     try {
       data_[last_][back_] = T(value);
     } catch (...) {
-      --size_;
       if (back_ == 0) {
         back_ = kBucketSize - 1;
         --last_;
@@ -229,20 +247,20 @@ class Deque {
       }
       throw;
     }
+    ++size_;
   }
   void push_front(const T& value) {
     if (data_ == nullptr) {
       set_first(value);
       return;
     }
-    ++size_;
     if (front_ == 0) {
       if (first_ == 0) {
-        size_t new_cap = buckets_ * 2 + 1;
-        scale(new_cap);
-        first_ += (new_cap - buckets_) / 2;
+        size_t new_buckets_count = buckets_ * 2 + 1;
+        scale(new_buckets_count);
+        first_ += (new_buckets_count - buckets_) / 2;
         last_ += first_;
-        buckets_ = new_cap;
+        buckets_ = new_buckets_count;
       }
       --first_;
       front_ = kBucketSize - 1;
@@ -252,7 +270,6 @@ class Deque {
     try {
       data_[first_][front_] = T(value);
     } catch (...) {
-      --size_;
       if (front_ == kBucketSize - 1) {
         front_ = 0;
         ++first_;
@@ -261,6 +278,7 @@ class Deque {
       }
       throw;
     }
+    ++size_;
   }
 
   void pop_back() {
@@ -327,18 +345,18 @@ class Deque {
   }
 
  private:
-  void scale(size_t new_cap) {
-    if (new_cap < buckets_ + 1) {
+  void scale(size_t new_buckets_count) {
+    if (new_buckets_count < buckets_ + 1) {
       return;
     }
-    T** new_data = new T*[new_cap];
+    T** new_data = new T*[new_buckets_count];
     try {
-      for (size_t idx = 0; idx < (new_cap - buckets_) / 2; ++idx) {
+      for (size_t idx = 0; idx < (new_buckets_count - buckets_) / 2; ++idx) {
         new_data[idx] =
             static_cast<T*>(operator new[](kBucketSize * sizeof(T)));
       }
     } catch (...) {
-      for (size_t idx = 0; idx < (new_cap - buckets_) / 2; ++idx) {
+      for (size_t idx = 0; idx < (new_buckets_count - buckets_) / 2; ++idx) {
         delete[] new_data[idx];
       }
       delete[] new_data;
@@ -346,24 +364,24 @@ class Deque {
     }
     try {
       for (size_t jdx = 0; jdx < buckets_; ++jdx) {
-        new_data[(new_cap - buckets_) / 2 + jdx] = data_[jdx];
+        new_data[(new_buckets_count - buckets_) / 2 + jdx] = data_[jdx];
       }
     } catch (...) {
       for (size_t jdx = 0; jdx < buckets_; ++jdx) {
-        delete[] new_data[(new_cap - buckets_) / 2 + jdx];
+        delete[] new_data[(new_buckets_count - buckets_) / 2 + jdx];
       }
       delete[] new_data;
       throw;
     }
     try {
-      for (size_t idx = (new_cap - buckets_) / 2 + buckets_; idx < new_cap;
-           ++idx) {
+      for (size_t idx = (new_buckets_count - buckets_) / 2 + buckets_;
+           idx < new_buckets_count; ++idx) {
         new_data[idx] =
             static_cast<T*>(operator new[](kBucketSize * sizeof(T)));
       }
     } catch (...) {
-      for (size_t idx = (new_cap - buckets_) / 2 + buckets_; idx < new_cap;
-           ++idx) {
+      for (size_t idx = (new_buckets_count - buckets_) / 2 + buckets_;
+           idx < new_buckets_count; ++idx) {
         delete[] new_data[idx];
       }
       delete[] new_data;
@@ -371,42 +389,6 @@ class Deque {
     }
     delete[] data_;
     data_ = new_data;
-  }
-
-  void init(size_t new_cap, const T& value) {
-    scale(new_cap);
-    auto cleanup = [this, new_cap]() {
-      for (size_t idx = 0; idx < new_cap; ++idx) {
-        if (data_[idx]) {
-          for (size_t kdx = 0; kdx < kBucketSize; ++kdx) {
-            data_[idx][kdx].~T();
-          }
-          operator delete[](data_[idx]);
-        }
-      }
-      delete[] data_;
-    };
-    try {
-      for (size_t idx = 0; idx < (new_cap - buckets_) / 2; ++idx) {
-        for (size_t kdx = 0; kdx < kBucketSize; ++kdx) {
-          new (&data_[idx][kdx]) T(value);
-        }
-      }
-    } catch (...) {
-      cleanup();
-      throw;
-    }
-    try {
-      for (size_t idx = (new_cap - buckets_) / 2 + buckets_; idx < new_cap;
-           ++idx) {
-        for (size_t kdx = 0; kdx < kBucketSize; ++kdx) {
-          new (&data_[idx][kdx]) T(value);
-        }
-      }
-    } catch (...) {
-      cleanup();
-      throw;
-    }
   }
 
   void set_null() {
@@ -464,11 +446,7 @@ class Deque<T>::Iterator {
 
   Iterator operator++(int) {
     auto copy = *this;
-    ++elem_;
-    if (elem_ == kBucketSize) {
-      elem_ = 0;
-      ++bucket_;
-    }
+    ++(*this);
     return copy;
   }
 
@@ -484,12 +462,7 @@ class Deque<T>::Iterator {
 
   Iterator operator--(int) {
     auto copy = *this;
-    if (elem_ == 0) {
-      elem_ = kBucketSize - 1;
-      --bucket_;
-    } else {
-      --elem_;
-    }
+    --(*this);
     return copy;
   }
 
@@ -518,17 +491,18 @@ class Deque<T>::Iterator {
   }
 
   Iterator& operator+=(difference_type value) {
-    while (value != 0) {
-      ++(*this);
-      --value;
-    }
+    elem_ += value;
+    bucket_ += elem_ / kBucketSize;
+    elem_ %= kBucketSize;
     return *this;
   }
 
   Iterator& operator-=(difference_type value) {
-    while (value != 0) {
-      --(*this);
-      --value;
+    bucket_ -= (elem_ + value) / kBucketSize;
+    elem_ = kBucketSize - ((elem_ + value) % kBucketSize);
+    if (elem_ == kBucketSize) {
+      elem_ = 0;
+      --bucket_;
     }
     return *this;
   }
@@ -545,13 +519,8 @@ class Deque<T>::Iterator {
     return bucket_dif * kBucketSize + elem_dif;
   }
 
-  const value_type& operator*() const { return (*(data_ + bucket_))[elem_]; }
-
-  reference operator*() { return (*(data_ + bucket_))[elem_]; }
-
-  pointer operator->() { return &(*(data_ + bucket_))[elem_]; }
-
-  const value_type* operator->() const { return &(*(data_ + bucket_))[elem_]; }
+  reference operator*() const { return data_[bucket_][elem_]; }
+  pointer operator->() const { return data_[bucket_] + elem_; }
 
   operator Iterator<true>() const {
     return Iterator<true>(data_, bucket_, elem_);
