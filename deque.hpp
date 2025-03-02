@@ -1,6 +1,5 @@
-//
-// Created by sheyme on 22/02/25.
-//
+#pragma once
+
 #include <iterator>
 
 template <typename T>
@@ -89,6 +88,9 @@ class Deque {
   size_t last_{0};
   size_t front_{0};
   size_t back_{0};
+
+  iterator begin_;
+  iterator end_;
 };
 
 template <typename T>
@@ -149,34 +151,7 @@ class Deque<T>::Iterator {
 // Deque
 
 template <typename T>
-Deque<T>::Deque(size_t count) {
-  if (count == 0) {
-    return;
-  }
-  scale((count - 1) / kBucketSize + 1);
-  buckets_ = (count - 1) / kBucketSize + 1;
-  back_ = (count - 1) % kBucketSize;
-  last_ = buckets_ - 1;
-  size_ = count;
-  size_t jdx = front_;
-  size_t number = 0;
-  try {
-    for (size_t idx = first_; idx < last_ + 1; ++idx) {
-      while (jdx != kBucketSize) {
-        if (number == size_) {
-          return;
-        }
-        data_[idx][jdx] = T();
-        ++jdx;
-      }
-      jdx = 0;
-    }
-  } catch (...) {
-    clear();
-    delete[] data_;
-    throw;
-  }
-}
+Deque<T>::Deque(size_t count) : Deque(count, T()) {}
 
 template <typename T>
 Deque<T>::Deque(size_t count, const T& value) {
@@ -264,12 +239,12 @@ Deque<T>& Deque<T>::operator=(const Deque<T>& other) {
   }
   Deque<T> copy(other);
   std::swap(data_, copy.data_);
-  buckets_ = copy.buckets_;
-  size_ = copy.size_;
-  first_ = copy.first_;
-  last_ = copy.last_;
-  front_ = copy.front_;
-  back_ = copy.back_;
+  std::swap(buckets_, copy.buckets_);
+  std::swap(size_, copy.size_);
+  std::swap(first_, copy.first_);
+  std::swap(last_, copy.last_);
+  std::swap(front_, copy.front_);
+  std::swap(back_, copy.back_);
   return *this;
 }
 
@@ -482,7 +457,8 @@ void Deque<T>::scale(size_t new_buckets_count) {
   T** new_data = new T*[new_buckets_count];
   try {
     for (size_t idx = 0; idx < (new_buckets_count - buckets_) / 2; ++idx) {
-      new_data[idx] = static_cast<T*>(operator new[](kBucketSize * sizeof(T)));
+      new_data[idx] =
+          reinterpret_cast<T*>(operator new[](kBucketSize * sizeof(T)));
     }
   } catch (...) {
     for (size_t idx = 0; idx < (new_buckets_count - buckets_) / 2; ++idx) {
@@ -505,7 +481,8 @@ void Deque<T>::scale(size_t new_buckets_count) {
   try {
     for (size_t idx = (new_buckets_count - buckets_) / 2 + buckets_;
          idx < new_buckets_count; ++idx) {
-      new_data[idx] = static_cast<T*>(operator new[](kBucketSize * sizeof(T)));
+      new_data[idx] =
+          reinterpret_cast<T*>(operator new[](kBucketSize * sizeof(T)));
     }
   } catch (...) {
     for (size_t idx = (new_buckets_count - buckets_) / 2 + buckets_;
@@ -517,6 +494,8 @@ void Deque<T>::scale(size_t new_buckets_count) {
   }
   delete[] data_;
   data_ = new_data;
+  begin_ = begin();
+  end_ = end();
 }
 
 template <typename T>
