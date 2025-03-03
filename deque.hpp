@@ -88,9 +88,6 @@ class Deque {
   size_t last_{0};
   size_t front_{0};
   size_t back_{0};
-
-  iterator begin_;
-  iterator end_;
 };
 
 template <typename T>
@@ -494,8 +491,6 @@ void Deque<T>::scale(size_t new_buckets_count) {
   }
   delete[] data_;
   data_ = new_data;
-  begin_ = begin();
-  end_ = end();
 }
 
 template <typename T>
