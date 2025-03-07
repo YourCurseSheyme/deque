@@ -145,10 +145,12 @@ class Deque<T>::Iterator {
     bucket_ += diff;
   }
 
+ private:
+  friend Deque<T>;
+
   size_t get_bucket() const { return bucket_; }
   size_t get_elem() const { return elem_; }
 
- private:
   static const size_t kBucketSize = 8;
   storage_pointer data_;
   size_t bucket_;
