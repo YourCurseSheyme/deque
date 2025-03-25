@@ -86,8 +86,6 @@ class Deque {
 
   iterator erase(iterator pos);
 
-  size_t scale_number = 0;
-
  private:
   using alloc = Allocator;
   using alloc_traits = std::allocator_traits<Allocator>;
@@ -565,7 +563,6 @@ typename Deque<T, Allocator>::iterator Deque<T, Allocator>::erase(
 
 template <typename T, typename Allocator>
 void Deque<T, Allocator>::scale(size_t new_buckets_count) {
-  ++scale_number;
   if (new_buckets_count < buckets_ + 1) {
     return;
   }
