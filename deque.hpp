@@ -30,7 +30,7 @@ class Deque {
   ~Deque();
 
   Deque& operator=(const Deque& other);
-  Deque& operator=(Deque<T, Allocator>&& other) noexcept;
+  Deque& operator=(Deque<T, Allocator>&& other);
 
   iterator begin() { return begin_; }
   const_iterator begin() const { return begin_; }
@@ -165,12 +165,6 @@ class Deque<T, Allocator>::Iterator {
   }
 
  private:
-  friend Deque<T, Allocator>;
-  void fix(storage_pointer new_data, size_t diff) {
-    data_ = new_data;
-    bucket_ += diff;
-  }
-
   static const size_t kBucketSize = 8;
   storage_pointer data_;
   size_t bucket_;
@@ -310,14 +304,8 @@ Deque<T, Allocator>::Deque(const Deque& other) : size_(other.size_) {
 }
 
 template <typename T, typename Allocator>
-Deque<T, Allocator>::Deque(Deque&& other) noexcept
-    : data_(other.data_),
-      size_(other.size_),
-      buckets_(other.buckets_),
-      begin_(other.begin_),
-      end_(other.end_) {
-  other.set_null();
-  other.data_ = nullptr;
+Deque<T, Allocator>::Deque(Deque&& other) noexcept {
+  *this = std::move(other);
 }
 
 template <typename T, typename Allocator>
@@ -370,28 +358,49 @@ Deque<T, Allocator>& Deque<T, Allocator>::operator=(const Deque& other) {
 
 template <typename T, typename Allocator>
 Deque<T, Allocator>& Deque<T, Allocator>::operator=(
-    Deque<T, Allocator>&& other) noexcept {
+    Deque<T, Allocator>&& other) {
   if (&other == this) {
     return *this;
   }
-  alloc new_alloc = alloc_;
-  if (alloc_traits::propagate_on_container_copy_assignment::value) {
-    new_alloc = other.alloc_;
-  }
-  bucket_alloc new_bucket_alloc = bucket_alloc_;
-  if (bucket_alloc_traits::propagate_on_container_copy_assignment::value) {
-    new_bucket_alloc = other.bucket_alloc_;
+  if (alloc_ == other.alloc_ ||
+      alloc_traits::propagate_on_container_move_assignment::value) {
+    clear();
+    bucket_alloc_traits::deallocate(bucket_alloc_, data_, buckets_);
+    data_ = std::move(other.data_);
+    size_ = other.size_;
+    buckets_ = other.buckets_;
+    begin_ = other.begin_;
+    end_ = other.end_;
+    if (alloc_traits::propagate_on_container_move_assignment::value) {
+      alloc_ = std::move(other.alloc_);
+      bucket_alloc_ = std::move(other.bucket_alloc_);
+    }
+    other.set_null();
+    other.data_ = nullptr;
+    return *this;
   }
   clear();
-  bucket_alloc_traits::deallocate(bucket_alloc_, data_, buckets_);
-  data_ = std::move(other.data_);
-  alloc_ = new_alloc;
-  bucket_alloc_ = new_bucket_alloc;
-  size_ = other.size_;
+  if (data_ != nullptr) {
+    bucket_alloc_traits::deallocate(bucket_alloc_, data_, buckets_);
+  }
   buckets_ = other.buckets_;
-  begin_ = other.begin_;
-  end_ = other.end_;
-  other.set_null();
+  scale(buckets_);
+  begin_ = Iterator<false>(data_, 0, 0);
+  end_ = begin_;
+  try {
+    for (auto iter = other.begin_; iter != other.end_; ++iter) {
+      alloc_traits::construct(alloc_, &*end_, std::move(*iter));
+      ++end_;
+    }
+    size_ = other.size_;
+  } catch (...) {
+    clear();
+    bucket_alloc_traits::deallocate(bucket_alloc_, data_, buckets_);
+    set_null();
+    throw;
+  }
+  other.clear();
+  other.data_ = nullptr;
   return *this;
 }
 
@@ -446,8 +455,9 @@ void Deque<T, Allocator>::emplace_back(Args&&... args) {
   if (&*(end_ - 1) == &data_[buckets_ - 1][kBucketSize - 1]) {
     size_t new_buckets_count = (buckets_ * 2) + 1;
     scale(new_buckets_count);
-    begin_.fix(data_, (buckets_ + 1) / 2);
-    end_.fix(data_, (buckets_ + 1) / 2);
+    end_ = Iterator<false>(data_, buckets_ - 1 + ((buckets_ + 1) / 2),
+                           kBucketSize - 1);
+    begin_ = end_ - size_;
     buckets_ = new_buckets_count;
   }
   alloc_traits::construct(alloc_, &*end_, std::forward<Args>(args)...);
@@ -475,8 +485,8 @@ void Deque<T, Allocator>::emplace_front(Args&&... args) {
   if (&*begin_ == &data_[0][0]) {
     size_t new_buckets_count = (buckets_ * 2) + 1;
     scale(new_buckets_count);
-    begin_.fix(data_, (new_buckets_count - buckets_) / 2);
-    end_.fix(data_, (new_buckets_count - buckets_) / 2);
+    begin_ = Iterator<false>(data_, (buckets_ + 1) / 2, 0);
+    end_ = begin_ + size_;
     buckets_ = new_buckets_count;
   }
   alloc_traits::construct(alloc_, &*(begin_ - 1), std::forward<Args>(args)...);
@@ -532,19 +542,21 @@ template <typename T, typename Allocator>
 typename Deque<T, Allocator>::iterator Deque<T, Allocator>::insert(
     Deque::iterator pos, const T& value) {
   if (pos == begin()) {
-    push_front(value);
+    emplace_front(value);
     return begin();
   }
   if (pos == end()) {
-    push_back(value);
+    emplace_back(value);
     return end() - 1;
   }
   size_t edge = pos - begin();
-  push_back(value);
-  for (size_t idx = size_ - 1; idx > edge; --idx) {
-    std::swap(operator[](idx), operator[](idx - 1));
+  emplace_back(value);
+  auto dest = begin() + edge;
+  for (auto iter = end() - 1; iter != dest; --iter) {
+    *iter = std::move(*(iter - 1));
   }
-  return pos;
+  *dest = value;
+  return dest;
 }
 
 template <typename T, typename Allocator>
@@ -555,7 +567,7 @@ typename Deque<T, Allocator>::iterator Deque<T, Allocator>::erase(
   }
   auto next = pos + 1;
   for (auto iter = pos; iter != end() - 1; ++iter) {
-    std::swap(*iter, *(iter + 1));
+    *iter = std::move(*(iter + 1));
   }
   pop_back();
   return next;
@@ -612,8 +624,8 @@ template <typename T, typename Allocator>
 void Deque<T, Allocator>::set_null() {
   size_ = 0;
   buckets_ = 0;
-  begin_ = Iterator<false>(data_, 0, 0);
-  end_ = Iterator<false>(data_, 0, 0);
+  begin_ = Iterator<false>(nullptr, 0, 0);
+  end_ = Iterator<false>(nullptr, 0, 0);
 }
 
 template <typename T, typename Allocator>

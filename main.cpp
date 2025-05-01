@@ -434,13 +434,9 @@ void TestFunction(const std::vector<size_t>& test_vector) {
     d.push_back(number);
   }
 
-  std::cout << d.scale_number << "\n+-----------------\n";
-
   for (const auto& number: test_vector) {
     d.push_front(number);
   }
-
-  std::cout << d.scale_number << '\n';
 
   while (!d.empty()) {
     d.pop_back();
@@ -472,5 +468,27 @@ int RunTest() {
 }
 
 int main() {
-  std::cout << RunTest();
+//  std::cout << RunTest();
+  Deque<NotDefaultConstructible> d(10000, {1});
+  auto start_size = d.size();
+
+  d.insert(d.begin() + static_cast<int>(start_size) / 2,
+           NotDefaultConstructible{2});
+//  std::cout << (d.begin() + static_cast<int>(start_size) / 2 - 1)->data << '\n';
+  std::cout << (d.size() == start_size + 1) << '\n';
+  d.erase(d.begin() + static_cast<int>(start_size) / 2 - 1);
+  std::cout << (d.size() == start_size) << '\n';
+
+  std::cout << "count: " << std::count(d.begin(), d.end(), NotDefaultConstructible{1}) << '\n';
+  std::cout << (size_t(std::count(d.begin(), d.end(), NotDefaultConstructible{1}))
+              == start_size - 1) << '\n';
+//  std::cout << (std::count(d.begin(), d.end(), NotDefaultConstructible{2}) == 1) << '\n';
+//
+//  Deque<NotDefaultConstructible> copy;
+//  for (const auto& item: d) {
+//    copy.insert(copy.end(), item);
+//  }
+//
+//  std::cout << (d.size() == copy.size()) << '\n';
+//  std::cout << (std::equal(d.begin(), d.end(), copy.begin())) << '\n';
 }
