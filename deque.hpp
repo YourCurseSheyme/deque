@@ -101,6 +101,7 @@ class Deque {
   void clear_particularly(size_t count, size_t start, size_t end);
 
   void set_null();
+  void clear_buckets();
 
   template <typename... Args>
   void set_first(Args&&... value);
@@ -383,8 +384,8 @@ Deque<T, Allocator>& Deque<T, Allocator>::operator=(
   if (data_ != nullptr) {
     bucket_alloc_traits::deallocate(bucket_alloc_, data_, buckets_);
   }
+  scale(other.buckets_);
   buckets_ = other.buckets_;
-  scale(buckets_);
   begin_ = Iterator<false>(data_, 0, 0);
   end_ = begin_;
   try {
@@ -400,6 +401,7 @@ Deque<T, Allocator>& Deque<T, Allocator>::operator=(
     throw;
   }
   other.clear();
+  other.clear_buckets();
   other.data_ = nullptr;
   return *this;
 }
@@ -455,8 +457,9 @@ void Deque<T, Allocator>::emplace_back(Args&&... args) {
   if (&*(end_ - 1) == &data_[buckets_ - 1][kBucketSize - 1]) {
     size_t new_buckets_count = (buckets_ * 2) + 1;
     scale(new_buckets_count);
-    end_ = Iterator<false>(data_, buckets_ - 1 + ((buckets_ + 1) / 2),
-                           kBucketSize - 1);
+    end_ = Iterator<false>(data_, ((buckets_ + 1) / 2) + buckets_ - 1,
+                           kBucketSize - 1) +
+           1;
     begin_ = end_ - size_;
     buckets_ = new_buckets_count;
   }
@@ -618,6 +621,11 @@ void Deque<T, Allocator>::scale(size_t new_buckets_count) {
   }
   bucket_alloc_traits::deallocate(bucket_alloc_, data_, buckets_);
   data_ = new_data;
+}
+
+template <typename T, typename Allocator>
+void Deque<T, Allocator>::clear_buckets() {
+  bucket_alloc_traits::deallocate(bucket_alloc_, data_, buckets_);
 }
 
 template <typename T, typename Allocator>

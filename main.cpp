@@ -467,28 +467,38 @@ int RunTest() {
   return duration_in_seconds > kNormalDuration ? 1 : 0;
 }
 
+template <typename Deq, typename Other>
+bool Eq(const Deq& first, const Other& second) {
+  std::cout << "+----\n";
+  int idx = 0;
+  auto first1 = first.begin();
+  auto last1 = first.end();
+  auto first2 = second.begin();
+
+  while (first1 != last1) {
+    if (*first1 != *first2) {
+      std::cout << idx << '\n';
+      return false;
+    }
+    ++first1;
+    ++first2;
+    ++idx;
+  }
+  return true;
+}
+
 int main() {
-//  std::cout << RunTest();
-  Deque<NotDefaultConstructible> d(10000, {1});
-  auto start_size = d.size();
+  SetupTest();
+  const size_t size = 5;
+  Deque<TypeWithCounts, AllocatorWithCount<TypeWithCounts>> d1 = {1, 2, 3, 4, 5};
+  Deque<TypeWithCounts, AllocatorWithCount<TypeWithCounts>> d2(std::move(d1));
 
-  d.insert(d.begin() + static_cast<int>(start_size) / 2,
-           NotDefaultConstructible{2});
-//  std::cout << (d.begin() + static_cast<int>(start_size) / 2 - 1)->data << '\n';
-  std::cout << (d.size() == start_size + 1) << '\n';
-  d.erase(d.begin() + static_cast<int>(start_size) / 2 - 1);
-  std::cout << (d.size() == start_size) << '\n';
-
-  std::cout << "count: " << std::count(d.begin(), d.end(), NotDefaultConstructible{1}) << '\n';
-  std::cout << (size_t(std::count(d.begin(), d.end(), NotDefaultConstructible{1}))
-              == start_size - 1) << '\n';
-//  std::cout << (std::count(d.begin(), d.end(), NotDefaultConstructible{2}) == 1) << '\n';
-//
-//  Deque<NotDefaultConstructible> copy;
-//  for (const auto& item: d) {
-//    copy.insert(copy.end(), item);
-//  }
-//
-//  std::cout << (d.size() == copy.size()) << '\n';
-//  std::cout << (std::equal(d.begin(), d.end(), copy.begin())) << '\n';
+  std::cout << (d1.size() == 0);
+  std::cout << (d2.size() == size);
+  std::cout << (MemoryManager::allocator_allocated != 0);
+  std::cout << (MemoryManager::allocator_constructed >= size);
+  for (auto& value : d1) {
+    std::cout << (*value.copy_c == 1);
+    std::cout << (*value.move_c == 1);
+  }
 }
